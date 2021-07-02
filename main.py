@@ -29,7 +29,7 @@ def get_data(train_x):
                                                                200)
         feature = pred_before - pred_after
 
-        final_data[index, :] = feature
+        final_data[index, :] = feature.flatten()
 
     return final_data
 
@@ -69,24 +69,24 @@ if __name__ == "__main__":
             model = keras_model(num_eval, False)
             callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=50,
                                                      restore_best_weights=True)
-            model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=8, epochs=300,
+            model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=8, epochs=10,
                       verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]),
                       callbacks=[callback])
 
-            # predictions_val = model.predict(x_val_inner)
-            # predictions_val = clip_values(predictions_val, dim_of_interest)
+            predictions_val = model.predict(x_val_inner)
+            predictions_val = clip_values(predictions_val, dim_of_interest)
 
-            weights_trained = model.get_weights()
-            model = keras_model(num_eval, True)
-            model.set_weights(weights_trained)
-
-            list_pred = []
-            for _ in range(100):
-                predictions_val = model.predict(x_val_inner)
-                predictions_val = clip_values(predictions_val, dim_of_interest)
-                list_pred.append(predictions_val)
-
-            predictions_val = np.mean(np.array(list_pred), axis=0)
+            # weights_trained = model.get_weights()
+            # model = keras_model(num_eval, True)
+            # model.set_weights(weights_trained)
+            #
+            # list_pred = []
+            # for _ in range(100):
+            #     predictions_val = model.predict(x_val_inner)
+            #     predictions_val = clip_values(predictions_val, dim_of_interest)
+            #     list_pred.append(predictions_val)
+            #
+            # predictions_val = np.mean(np.array(list_pred), axis=0)
 
             error = compute_error(y_val_inner[:, dim_of_interest], predictions_val)
             r2 = r2_score(y_val_inner[:, dim_of_interest], predictions_val)

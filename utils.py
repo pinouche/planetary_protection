@@ -2,6 +2,8 @@ import numpy as np
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
+import matplotlib.pyplot as plt
+from scipy.interpolate import UnivariateSpline
 
 
 def compute_baseline_error(list_indices, train_y, dim):
@@ -50,12 +52,7 @@ def make_grid(data_before, data_after, range_x, range_y, inverse=False):
     num_points_before = data_before.shape[0]
     num_points_after = data_after.shape[0]
 
-    start_y, end_y, = min(np.min(data_before[:, 1]), np.min(data_after[:, 1])), max(np.max(data_before[:, 1]), np.max(data_after[:, 1]))
-
     matrix_count = np.zeros((len(range_y) - 1, len(range_x) - 1))
-
-    x_count = 0
-    y_count = 0
 
     def get_subsets(data, range_x, range_y, i, j):
         subset = data[(data[:, 0] > range_x[i]) & (data[:, 0] < range_x[i + 1])]
@@ -90,10 +87,19 @@ def interpolate_light_curve(light_curve, range_pred):
     data_x, data_y = np.expand_dims(light_curve[:, 0], axis=1), np.expand_dims(light_curve[:, 1], axis=1)
     range_pred = np.expand_dims(range_pred, axis=1)
 
+    spline = UnivariateSpline(data_x, data_y, s=0.001)
+    pred_new_range_spline = spline(range_pred)
+
     est = RandomForestRegressor(100)
     est.fit(data_x, data_y)
-    pred_train = est.predict(data_x)
     pred_new_range = est.predict(range_pred)
+
+    plt.plot()
+    plt.grid(True)
+    plt.scatter(data_x, data_y, s=5)
+    plt.scatter(range_pred, pred_new_range, s=5)
+    plt.scatter(range_pred, pred_new_range_spline, s=5)
+    plt.show()
 
     return pred_new_range
 

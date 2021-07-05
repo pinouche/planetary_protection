@@ -94,14 +94,17 @@ def interpolate_light_curve(light_curve, range_pred):
     est.fit(data_x, data_y)
     pred_new_range = est.predict(range_pred)
 
-    plt.plot()
-    plt.grid(True)
-    plt.scatter(data_x, data_y, s=5)
-    plt.scatter(range_pred, pred_new_range, s=5)
-    plt.scatter(range_pred, pred_new_range_spline, s=5)
-    plt.show()
+    pred_average = (pred_new_range_spline.flatten() + pred_new_range)/2
 
-    return pred_new_range
+    # plt.plot()
+    # plt.grid(True)
+    # plt.scatter(data_x, data_y, s=5)
+    # plt.scatter(range_pred, pred_new_range, s=5)
+    # plt.scatter(range_pred, pred_new_range_spline, s=5)
+    # plt.scatter(range_pred, pred_average, s=5)
+    # plt.show()
+
+    return pred_average
 
 
 def get_one_dim_diff(data_before, data_after, num_intervals=100):

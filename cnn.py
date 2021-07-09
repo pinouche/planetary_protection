@@ -2,7 +2,7 @@ import keras
 
 
 def keras_model(seed, training_mode=False):
-    num_filters = 128
+    num_filters = 32
     input_shape = (200, 1)
     output_size = 1
 
@@ -15,7 +15,7 @@ def keras_model(seed, training_mode=False):
     x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Dropout(0.5)(x, training_mode)
 
-    for layer in range(6):
+    for layer in range(5):
         x = keras.layers.Conv1D(num_filters, 20, 2, activation='elu', kernel_initializer=initializer,
                                 padding='same', input_shape=input_shape, trainable=True)(x)
         # x = keras.layers.MaxPooling1D(pool_size=2, padding="valid")(x)
@@ -23,10 +23,8 @@ def keras_model(seed, training_mode=False):
         x = keras.layers.BatchNormalization()(x)
         x = keras.layers.Dropout(0.5)(x, training_mode)
 
-    print(x)
-
     x = keras.layers.Flatten()(x)
-    x = keras.layers.Dense(128, activation='elu', use_bias=True, kernel_initializer=initializer, trainable=True)(x)
+    x = keras.layers.Dense(256, activation='elu', use_bias=True, kernel_initializer=initializer, trainable=True)(x)
     x = keras.layers.BatchNormalization()(x)
     x = keras.layers.Dropout(0.5)(x, training_mode)
 

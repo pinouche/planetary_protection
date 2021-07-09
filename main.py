@@ -38,6 +38,9 @@ def get_data(train_x, num_intervals=4, num_sampled_points=200):
 
 if __name__ == "__main__":
 
+    averaging_at_inference_time = False
+    stochastic_averaging = True
+
     num_intervals = 1
     num_sampled_points = 200
     dim_of_interest = 0
@@ -73,44 +76,65 @@ if __name__ == "__main__":
             x_train_inner, x_val_inner = x_train_inner / np.abs(np.max(x_train_inner)), x_val_inner / np.abs(np.max(x_train_inner))
             model = keras_model(num_eval, False)
 
-            early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=100, restore_best_weights=True)
+            early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=50, restore_best_weights=True)
 
             def scheduler(epoch, lr):
-                if epoch < 50:
-                    return lr
-                else:
-                    return lr/10
+                if epoch >= 0:
+                    lr = 0.0005
+                return lr
 
             scheduler_callback = keras.callbacks.LearningRateScheduler(scheduler)
 
-            model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=300,
-                      verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]),
-                      callbacks=[early_stop_callback, scheduler_callback])
+            model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=100,
+                      verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]))
 
-            # predictions_val = model.predict(x_val_inner)
-            # predictions_val = clip_values(predictions_val, dim_of_interest)
+            if stochastic_averaging:
 
-            # predictions_train = model.predict(x_train_inner)
-            # predictions_train = clip_values(predictions_train, dim_of_interest)
+                weight_list = []
+                for _ in range(20):
+                    model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=1,
+                              verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]),
+                              callbacks=[scheduler_callback])
 
-            weights_trained = model.get_weights()
-            model = keras_model(num_eval, True)
-            model.set_weights(weights_trained)
+                    weights = model.get_weights()
+                    weight_list.append(weights)
 
-            list_pred = []
-            list_pred_train = []
-            for _ in range(200):
+                weights = np.mean(np.array(weight_list), axis=0)
+                model = keras_model(num_eval, False)
+                model.set_weights(weights)
+
+            else:
+                model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=200,
+                          verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]),
+                          callbacks=[early_stop_callback])
+
+            if averaging_at_inference_time:
+
+                weights_trained = model.get_weights()
+                model = keras_model(num_eval, True)
+                model.set_weights(weights_trained)
+
+                list_pred = []
+                list_pred_train = []
+                for _ in range(200):
+                    predictions_val = model.predict(x_val_inner)
+                    predictions_val = clip_values(predictions_val, dim_of_interest)
+
+                    predictions_train = model.predict(x_train_inner)
+                    predictions_train = clip_values(predictions_train, dim_of_interest)
+
+                    list_pred.append(predictions_val)
+                    list_pred_train.append(predictions_train)
+
+                predictions_val = np.mean(np.array(list_pred), axis=0)
+                predictions_train = np.mean(np.array(list_pred_train), axis=0)
+
+            else:
                 predictions_val = model.predict(x_val_inner)
                 predictions_val = clip_values(predictions_val, dim_of_interest)
 
                 predictions_train = model.predict(x_train_inner)
                 predictions_train = clip_values(predictions_train, dim_of_interest)
-
-                list_pred.append(predictions_val)
-                list_pred_train.append(predictions_train)
-
-            predictions_val = np.mean(np.array(list_pred), axis=0)
-            predictions_train = np.mean(np.array(list_pred_train), axis=0)
 
             train_error = compute_error(y_train_inner[:, dim_of_interest], predictions_train)
             error = compute_error(y_val_inner[:, dim_of_interest], predictions_val)

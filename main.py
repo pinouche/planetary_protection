@@ -39,7 +39,7 @@ def get_data(train_x, num_intervals=4, num_sampled_points=200):
 if __name__ == "__main__":
 
     averaging_at_inference_time = False
-    stochastic_averaging = True
+    stochastic_averaging = False
 
     num_intervals = 1
     num_sampled_points = 200
@@ -76,7 +76,7 @@ if __name__ == "__main__":
             x_train_inner, x_val_inner = x_train_inner / np.abs(np.max(x_train_inner)), x_val_inner / np.abs(np.max(x_train_inner))
             model = keras_model(num_eval, False)
 
-            early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=50, restore_best_weights=True)
+            early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=100, restore_best_weights=True)
 
             def scheduler(epoch, lr):
                 if epoch >= 0:
@@ -86,15 +86,14 @@ if __name__ == "__main__":
             scheduler_callback = keras.callbacks.LearningRateScheduler(scheduler)
 
             model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=100,
-                      verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]))
+                      verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]), callbacks=[early_stop_callback])
 
             if stochastic_averaging:
 
                 weight_list = []
-                for _ in range(20):
+                for _ in range(10):
                     model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=1,
-                              verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]),
-                              callbacks=[scheduler_callback])
+                              verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]), callbacks=[scheduler_callback])
 
                     weights = model.get_weights()
                     weight_list.append(weights)

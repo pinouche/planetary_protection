@@ -2,7 +2,7 @@ import keras
 
 
 def keras_model(seed, training_mode=False):
-    num_filters = 64
+    num_filters = 128
     input_shape = (200, 1)
     output_size = 1
 

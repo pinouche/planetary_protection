@@ -41,121 +41,176 @@ if __name__ == "__main__":
     averaging_at_inference_time = False
     stochastic_averaging = False
 
+    eval_mode = False
+
     num_intervals = 1
     num_sampled_points = 200
     dim_of_interest = 0
 
     train_x, test_x, train_y = load_data()
-    final_data = get_data(train_x, num_intervals, num_sampled_points)
+    train_x = get_data(train_x, num_intervals, num_sampled_points)
+    test_x = get_data(test_x, num_intervals, num_sampled_points)
 
     train_y = np.repeat(train_y, num_intervals, axis=0)
     y_bins = np.digitize(train_y[:, dim_of_interest], np.linspace(np.min(train_y[:, dim_of_interest]), np.max(train_y[:, dim_of_interest]), 4))
 
-    # nested cross-validation
-    list_indices_outer = []
-    list_indices_inner = []  # this is used for the validation
+    if eval_mode:
 
-    list_val_loss = []
-    list_val_r2 = []
+        # nested cross-validation
+        list_indices_outer = []
+        list_indices_inner = []  # this is used for the validation
 
-    num_eval = 0
-    kf_outer = StratifiedKFold(n_splits=10, shuffle=True, random_state=0)
-    for train_outer, val_outer in kf_outer.split(final_data, y_bins):
-        list_indices_outer.append((train_outer, val_outer))
+        list_val_loss = []
+        list_val_r2 = []
 
-        x_train_outer, y_train_outer, y_bins_train = final_data[train_outer], train_y[train_outer], y_bins[train_outer]
-        x_val_outer, y_val_outer = final_data[val_outer], train_y[val_outer]
+        num_eval = 0
+        kf_outer = StratifiedKFold(n_splits=10, shuffle=True, random_state=0)
+        for train_outer, val_outer in kf_outer.split(train_x, y_bins):
+            list_indices_outer.append((train_outer, val_outer))
 
-        kf_inner = StratifiedKFold(n_splits=10, shuffle=True, random_state=0)
-        for train_inner, val_inner in kf_inner.split(x_train_outer, y_bins_train):
-            list_indices_inner.append((train_inner, val_outer))
+            x_train_outer, y_train_outer, y_bins_train = train_x[train_outer], train_y[train_outer], y_bins[train_outer]
+            x_val_outer, y_val_outer = train_x[val_outer], train_y[val_outer]
 
-            x_train_inner, y_train_inner = x_train_outer[train_inner], y_train_outer[train_inner]
-            x_val_inner, y_val_inner = x_train_outer[val_inner], y_train_outer[val_inner]
+            kf_inner = StratifiedKFold(n_splits=10, shuffle=True, random_state=0)
+            for train_inner, val_inner in kf_inner.split(x_train_outer, y_bins_train):
+                list_indices_inner.append((train_inner, val_outer))
 
-            x_train_inner, x_val_inner = x_train_inner / np.abs(np.max(x_train_inner)), x_val_inner / np.abs(np.max(x_train_inner))
-            model = keras_model(num_eval, False)
+                x_train_inner, y_train_inner = x_train_outer[train_inner], y_train_outer[train_inner]
+                x_val_inner, y_val_inner = x_train_outer[val_inner], y_train_outer[val_inner]
 
-            early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=100, restore_best_weights=True)
-
-            def scheduler(epoch, lr):
-                if epoch >= 0:
-                    lr = 0.0005
-                return lr
-
-            scheduler_callback = keras.callbacks.LearningRateScheduler(scheduler)
-
-            model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=100,
-                      verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]), callbacks=[early_stop_callback])
-
-            if stochastic_averaging:
-
-                weight_list = []
-                for _ in range(10):
-                    model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=1,
-                              verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]), callbacks=[scheduler_callback])
-
-                    weights = model.get_weights()
-                    weight_list.append(weights)
-
-                weights = np.mean(np.array(weight_list), axis=0)
+                x_train_inner, x_val_inner = x_train_inner / np.abs(np.max(x_train_inner)), x_val_inner / np.abs(np.max(x_train_inner))
                 model = keras_model(num_eval, False)
-                model.set_weights(weights)
 
-            else:
+                early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=100, restore_best_weights=True)
+
+                def scheduler(epoch, lr):
+                    if epoch >= 0:
+                        lr = 0.0005
+                    return lr
+
+                scheduler_callback = keras.callbacks.LearningRateScheduler(scheduler)
+
                 model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=200,
-                          verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]),
-                          callbacks=[early_stop_callback])
+                          verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]), callbacks=[early_stop_callback])
 
-            if averaging_at_inference_time:
+                if stochastic_averaging:
 
-                weights_trained = model.get_weights()
-                model = keras_model(num_eval, True)
-                model.set_weights(weights_trained)
+                    weight_list = []
+                    for _ in range(10):
+                        model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=1,
+                                  verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]), callbacks=[scheduler_callback])
 
-                list_pred = []
-                list_pred_train = []
-                for _ in range(200):
+                        weights = model.get_weights()
+                        weight_list.append(weights)
+
+                    weights = np.mean(np.array(weight_list), axis=0)
+                    model = keras_model(num_eval, False)
+                    model.set_weights(weights)
+
+                if averaging_at_inference_time:
+
+                    weights_trained = model.get_weights()
+                    model = keras_model(num_eval, True)
+                    model.set_weights(weights_trained)
+
+                    list_pred = []
+                    list_pred_train = []
+                    for _ in range(200):
+                        predictions_val = model.predict(x_val_inner)
+                        predictions_val = clip_values(predictions_val, dim_of_interest)
+
+                        predictions_train = model.predict(x_train_inner)
+                        predictions_train = clip_values(predictions_train, dim_of_interest)
+
+                        list_pred.append(predictions_val)
+                        list_pred_train.append(predictions_train)
+
+                    predictions_val = np.mean(np.array(list_pred), axis=0)
+                    predictions_train = np.mean(np.array(list_pred_train), axis=0)
+
+                else:
                     predictions_val = model.predict(x_val_inner)
                     predictions_val = clip_values(predictions_val, dim_of_interest)
 
                     predictions_train = model.predict(x_train_inner)
                     predictions_train = clip_values(predictions_train, dim_of_interest)
 
-                    list_pred.append(predictions_val)
-                    list_pred_train.append(predictions_train)
+                train_error = compute_error(y_train_inner[:, dim_of_interest], predictions_train)
+                error = compute_error(y_val_inner[:, dim_of_interest], predictions_val)
+                r2 = r2_score(y_val_inner[:, dim_of_interest], predictions_val)
+                list_val_loss.append(error)
+                list_val_r2.append(r2)
 
-                predictions_val = np.mean(np.array(list_pred), axis=0)
-                predictions_train = np.mean(np.array(list_pred_train), axis=0)
+                print("TRAIN ERROR", train_error, "VAL ERROR: ", error, "R^2: ", r2)
+                print("AVERAGE ERROR: ", np.mean(list_val_loss), "AVERAGE R2: ", np.mean(list_val_r2))
 
-            else:
-                predictions_val = model.predict(x_val_inner)
-                predictions_val = clip_values(predictions_val, dim_of_interest)
+                # plt.plot()
+                # plt.grid(True)
+                # plt.scatter(y_val_inner[:, dim_of_interest], predictions_val, s=5)
+                # plt.show()
 
-                predictions_train = model.predict(x_train_inner)
-                predictions_train = clip_values(predictions_train, dim_of_interest)
+                num_eval += 1
 
-            train_error = compute_error(y_train_inner[:, dim_of_interest], predictions_train)
-            error = compute_error(y_val_inner[:, dim_of_interest], predictions_val)
-            r2 = r2_score(y_val_inner[:, dim_of_interest], predictions_val)
-            list_val_loss.append(error)
-            list_val_r2.append(r2)
+                if num_eval % 10 == 0:
+                    print("the number of eval is:" + str(num_eval))
+                    break
 
-            print("TRAIN ERROR", train_error, "VAL ERROR: ", error, "R^2: ", r2)
-            print("AVERAGE ERROR: ", np.mean(list_val_loss), "AVERAGE R2: ", np.mean(list_val_r2))
+                keras.backend.clear_session()
 
-            plt.plot()
-            plt.grid(True)
-            plt.scatter(y_val_inner[:, dim_of_interest], predictions_val, s=5)
-            plt.show()
+    else:
 
-            num_eval += 1
+        test_pred = [[] for _ in range(2)]
+        index = 0
+        for dim_of_interest in [0, 2]:
 
-            if num_eval % 10 == 0:
-                print("the number of eval is:" + str(num_eval))
-                break
+            num_eval = 0
+            kf_outer = StratifiedKFold(n_splits=2, shuffle=True, random_state=0)
+            for train_outer, val_outer in kf_outer.split(train_x, y_bins):
 
-            keras.backend.clear_session()
+                x_train_outer, y_train_outer, y_bins_train = train_x[train_outer], train_y[train_outer], y_bins[train_outer]
+                x_val_outer, y_val_outer = train_x[val_outer], train_y[val_outer]
+
+                x_train_inner, x_val_inner = x_train_outer / np.abs(np.max(x_train_outer)), x_val_outer / np.abs(np.max(x_train_outer))
+                test_x = test_x / np.abs(np.max(x_train_outer))
+                model = keras_model(num_eval, False)
+
+                early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=50, restore_best_weights=True)
+
+                model.fit(x_train_inner, y_train_outer[:, dim_of_interest], batch_size=16, epochs=200,
+                          verbose=2, validation_data=(x_val_inner, y_val_outer[:, dim_of_interest]), callbacks=[early_stop_callback])
+
+                weights_trained = model.get_weights()
+                model = keras_model(num_eval, True)
+                model.set_weights(weights_trained)
+
+                list_pred_val = []
+                list_pred_test = []
+
+                for _ in range(200):
+                    predictions_val = model.predict(x_val_inner)
+                    predictions_val = clip_values(predictions_val, dim_of_interest)
+
+                    predictions_test = model.predict(test_x)
+                    predictions_test = clip_values(predictions_test, dim_of_interest)
+
+                    list_pred_val.append(predictions_val)
+                    list_pred_test.append(predictions_test)
+
+                predictions_val = np.mean(np.array(list_pred_val), axis=0)
+                predictions_test = np.mean(np.array(list_pred_test), axis=0)
+
+                test_pred[index].append(predictions_test)
+
+                error = compute_error(y_val_outer[:, dim_of_interest], predictions_val)
+                r2 = r2_score(y_val_outer[:, dim_of_interest], predictions_val)
+
+                print("ERROR: ", error, " R2: ", r2)
+
+            index += 1
+
+            print(np.array(test_pred).shape)
+
+            #np.savetxt("results.txt", pred, fmt='%.18e', delimiter=",", encoding="utf-8")
 
 
 

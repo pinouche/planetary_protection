@@ -38,7 +38,7 @@ def get_data(train_x, num_intervals=4, num_sampled_points=200):
 
 if __name__ == "__main__":
 
-    averaging_at_inference_time = False
+    averaging_at_inference_time = True
     stochastic_averaging = False
 
     eval_mode = False
@@ -161,23 +161,23 @@ if __name__ == "__main__":
 
         test_pred = [[] for _ in range(2)]
         index = 0
+        num_eval = 0
         for dim_of_interest in [0, 2]:
 
-            num_eval = 0
             kf_outer = StratifiedKFold(n_splits=2, shuffle=True, random_state=0)
             for train_outer, val_outer in kf_outer.split(train_x, y_bins):
 
                 x_train_outer, y_train_outer, y_bins_train = train_x[train_outer], train_y[train_outer], y_bins[train_outer]
                 x_val_outer, y_val_outer = train_x[val_outer], train_y[val_outer]
 
-                x_train_inner, x_val_inner = x_train_outer / np.abs(np.max(x_train_outer)), x_val_outer / np.abs(np.max(x_train_outer))
+                x_train_outer, x_val_outer = x_train_outer / np.abs(np.max(x_train_outer)), x_val_outer / np.abs(np.max(x_train_outer))
                 test_x = test_x / np.abs(np.max(x_train_outer))
                 model = keras_model(num_eval, False)
 
-                early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=50, restore_best_weights=True)
+                early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=100, restore_best_weights=True)
 
-                model.fit(x_train_inner, y_train_outer[:, dim_of_interest], batch_size=16, epochs=200,
-                          verbose=2, validation_data=(x_val_inner, y_val_outer[:, dim_of_interest]), callbacks=[early_stop_callback])
+                model.fit(x_train_outer, y_train_outer[:, dim_of_interest], batch_size=16, epochs=200,
+                          verbose=2, validation_data=(x_val_outer, y_val_outer[:, dim_of_interest]), callbacks=[early_stop_callback])
 
                 weights_trained = model.get_weights()
                 model = keras_model(num_eval, True)
@@ -187,7 +187,7 @@ if __name__ == "__main__":
                 list_pred_test = []
 
                 for _ in range(200):
-                    predictions_val = model.predict(x_val_inner)
+                    predictions_val = model.predict(x_val_outer)
                     predictions_val = clip_values(predictions_val, dim_of_interest)
 
                     predictions_test = model.predict(test_x)
@@ -205,6 +205,7 @@ if __name__ == "__main__":
                 r2 = r2_score(y_val_outer[:, dim_of_interest], predictions_val)
 
                 print("ERROR: ", error, " R2: ", r2)
+                num_eval += 1
 
             index += 1
 

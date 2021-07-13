@@ -52,9 +52,11 @@ if __name__ == "__main__":
     test_x = get_data(test_x, num_intervals, num_sampled_points)
 
     train_y = np.repeat(train_y, num_intervals, axis=0)
-    y_bins = np.digitize(train_y[:, dim_of_interest], np.linspace(np.min(train_y[:, dim_of_interest]), np.max(train_y[:, dim_of_interest]), 4))
 
     if eval_mode:
+
+        dim_of_interest = 0
+        y_bins = np.digitize(train_y[:, dim_of_interest], np.linspace(np.min(train_y[:, dim_of_interest]), np.max(train_y[:, dim_of_interest]), 4))
 
         # nested cross-validation
         list_indices_outer = []
@@ -163,6 +165,8 @@ if __name__ == "__main__":
         index = 0
         num_eval = 0
         for dim_of_interest in [0, 2]:
+            r2_list = []
+            y_bins = np.digitize(train_y[:, dim_of_interest], np.linspace(np.min(train_y[:, dim_of_interest]), np.max(train_y[:, dim_of_interest]), 4))
 
             kf_outer = StratifiedKFold(n_splits=10, shuffle=True, random_state=0)
             for train_outer, val_outer in kf_outer.split(train_x, y_bins):
@@ -174,9 +178,9 @@ if __name__ == "__main__":
                 test_x = test_x / np.abs(np.max(x_train_outer))
                 model = keras_model(num_eval, False)
 
-                early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=100, restore_best_weights=True)
+                early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=25, restore_best_weights=True)
 
-                model.fit(x_train_outer, y_train_outer[:, dim_of_interest], batch_size=8, epochs=200,
+                model.fit(x_train_outer, y_train_outer[:, dim_of_interest], batch_size=32, epochs=200,
                             verbose=2, validation_data=(x_val_outer, y_val_outer[:, dim_of_interest]), callbacks=[early_stop_callback])
 
                 weights_trained = model.get_weights()
@@ -199,16 +203,27 @@ if __name__ == "__main__":
                 predictions_val = np.mean(np.array(list_pred_val), axis=0)
                 predictions_test = np.mean(np.array(list_pred_test), axis=0)
 
+                plt.plot()
+                plt.grid(True)
+                plt.scatter(y_val_outer[:, dim_of_interest], predictions_val, s=5)
+                plt.show()
+
                 test_pred[index].append(predictions_test)
 
                 error = compute_error(y_val_outer[:, dim_of_interest], predictions_val)
                 r2 = r2_score(y_val_outer[:, dim_of_interest], predictions_val)
+                r2_list.append(r2)
 
                 print("ERROR: ", error, " R2: ", r2)
                 num_eval += 1
 
+                keras.backend.clear_session()
+
+            best_model_index = np.argmax(r2_list)
+            test_pred[index] = test_pred[index][best_model_index]
+
             index += 1
 
-        pickle.dump(np.array(test_pred), open("results.p", "wb"))
+
 
 

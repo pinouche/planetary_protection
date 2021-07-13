@@ -164,7 +164,7 @@ if __name__ == "__main__":
         num_eval = 0
         for dim_of_interest in [0, 2]:
 
-            kf_outer = StratifiedKFold(n_splits=2, shuffle=True, random_state=0)
+            kf_outer = StratifiedKFold(n_splits=10, shuffle=True, random_state=0)
             for train_outer, val_outer in kf_outer.split(train_x, y_bins):
 
                 x_train_outer, y_train_outer, y_bins_train = train_x[train_outer], train_y[train_outer], y_bins[train_outer]
@@ -176,8 +176,8 @@ if __name__ == "__main__":
 
                 early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=100, restore_best_weights=True)
 
-                model.fit(x_train_outer, y_train_outer[:, dim_of_interest], batch_size=16, epochs=200,
-                          verbose=2, validation_data=(x_val_outer, y_val_outer[:, dim_of_interest]), callbacks=[early_stop_callback])
+                model.fit(x_train_outer, y_train_outer[:, dim_of_interest], batch_size=8, epochs=200,
+                            verbose=2, validation_data=(x_val_outer, y_val_outer[:, dim_of_interest]), callbacks=[early_stop_callback])
 
                 weights_trained = model.get_weights()
                 model = keras_model(num_eval, True)
@@ -209,12 +209,6 @@ if __name__ == "__main__":
 
             index += 1
 
-            print(np.array(test_pred).shape)
-
-            #np.savetxt("results.txt", pred, fmt='%.18e', delimiter=",", encoding="utf-8")
-
-
-
-
+        pickle.dump(np.array(test_pred), open("results.p", "wb"))
 
 

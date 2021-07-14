@@ -87,14 +87,14 @@ def interpolate_light_curve(light_curve, range_pred):
     data_x, data_y = np.expand_dims(light_curve[:, 0], axis=1), np.expand_dims(light_curve[:, 1], axis=1)
     range_pred = np.expand_dims(range_pred, axis=1)
 
-    spline = UnivariateSpline(data_x, data_y, s=0.001)
-    pred_new_range_spline = spline(range_pred)
+    # spline = UnivariateSpline(data_x, data_y, s=0.001)
+    # pred_new_range_spline = spline(range_pred)
 
     est = RandomForestRegressor(100)
     est.fit(data_x, data_y)
     pred_new_range = est.predict(range_pred)
 
-    pred_average = (pred_new_range_spline.flatten() + pred_new_range)/2
+    # pred_average = (pred_new_range_spline.flatten() + pred_new_range)/2
 
     # plt.plot()
     # plt.grid(True)
@@ -104,7 +104,7 @@ def interpolate_light_curve(light_curve, range_pred):
     # plt.scatter(range_pred, pred_average, s=5)
     # plt.show()
 
-    return pred_average
+    return pred_new_range
 
 
 def get_one_dim_diff(data_before, data_after, num_intervals=100):
@@ -132,4 +132,3 @@ def clip_values(predictions, dim):
         predictions[:, 1][predictions[:, 1] > 2.5] = 2.5
 
     return predictions
-

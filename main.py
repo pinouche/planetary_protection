@@ -3,60 +3,69 @@ from load_data import load_data
 from utils import compute_error
 from utils import clip_values
 from cnn import keras_model
+from cnn import cnn_training_schemes
 
 import numpy as np
 import keras
 import matplotlib.pyplot as plt
+import pickle
 
+from sklearn.linear_model import Ridge
+from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import r2_score
 
 
-def get_data(train_x, num_intervals=4, num_sampled_points=200):
+def get_data(data_x, binned=False, num_sampled_points=200, n_bins=20):
 
-    length_multi_instance = int(num_sampled_points / num_intervals)
-    final_data = np.zeros((200 * num_intervals, length_multi_instance))
+    length_multi_instance = num_sampled_points
 
-    counter = 0
-    for index in range(len(train_x)):
+    diff_data = np.zeros((len(data_x), length_multi_instance))
+
+    for index in range(len(data_x)):
 
         if index % 10 == 0:
             print("COMPUTED FOR INDEX NUMBER: " + str(index))
 
-        pred_before, pred_after, range_pred = get_one_dim_diff(train_x[index][0], train_x[index][1], num_sampled_points)
+        pred_before, pred_after, range_pred = get_one_dim_diff(data_x[index][0], data_x[index][1], num_sampled_points)
         feature = pred_before - pred_after
 
-        for n_interval in range(num_intervals):
-            n_f = feature[length_multi_instance * n_interval:length_multi_instance * (n_interval + 1)]
+        diff_data[index, :] = feature
 
-            final_data[counter, :] = n_f
+    if binned:
+        final_data = np.zeros((len(data_x), n_bins))
+        min_val, max_val = np.min(diff_data), np.max(diff_data)
 
-            counter += 1
+        for index in range(diff_data.shape[0]):
+            final_data[index, :] = np.histogram(diff_data[index], n_bins, (min_val, max_val), density=False)[0]/num_sampled_points
 
-    return final_data
+        return final_data
+
+    else:
+
+        return diff_data
 
 
 if __name__ == "__main__":
 
-    averaging_at_inference_time = True
+    binned = True
+
+    averaging_at_inference_time = False
     stochastic_averaging = False
 
-    eval_mode = False
+    eval_mode = True
 
-    num_intervals = 1
     num_sampled_points = 200
     dim_of_interest = 0
 
     train_x, test_x, train_y = load_data()
-    train_x = get_data(train_x, num_intervals, num_sampled_points)
-    test_x = get_data(test_x, num_intervals, num_sampled_points)
-
-    train_y = np.repeat(train_y, num_intervals, axis=0)
+    train_x = get_data(train_x, binned, num_sampled_points)
+    test_x = get_data(test_x, binned, num_sampled_points)
 
     if eval_mode:
 
         dim_of_interest = 0
-        y_bins = np.digitize(train_y[:, dim_of_interest], np.linspace(np.min(train_y[:, dim_of_interest]), np.max(train_y[:, dim_of_interest]), 4))
+        y_bins = np.digitize(train_y[:, dim_of_interest], np.linspace(np.min(train_y[:, dim_of_interest]), np.max(train_y[:, dim_of_interest]), 3))
 
         # nested cross-validation
         list_indices_outer = []
@@ -80,62 +89,15 @@ if __name__ == "__main__":
                 x_train_inner, y_train_inner = x_train_outer[train_inner], y_train_outer[train_inner]
                 x_val_inner, y_val_inner = x_train_outer[val_inner], y_train_outer[val_inner]
 
-                x_train_inner, x_val_inner = x_train_inner / np.abs(np.max(x_train_inner)), x_val_inner / np.abs(np.max(x_train_inner))
-                model = keras_model(num_eval, False)
-
-                early_stop_callback = keras.callbacks.EarlyStopping(monitor='val_loss', patience=100, restore_best_weights=True)
-
-                def scheduler(epoch, lr):
-                    if epoch >= 0:
-                        lr = 0.0005
-                    return lr
-
-                scheduler_callback = keras.callbacks.LearningRateScheduler(scheduler)
-
-                model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=200,
-                          verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]), callbacks=[early_stop_callback])
-
-                if stochastic_averaging:
-
-                    weight_list = []
-                    for _ in range(10):
-                        model.fit(x_train_inner, y_train_inner[:, dim_of_interest], batch_size=16, epochs=1,
-                                  verbose=2, validation_data=(x_val_inner, y_val_inner[:, dim_of_interest]), callbacks=[scheduler_callback])
-
-                        weights = model.get_weights()
-                        weight_list.append(weights)
-
-                    weights = np.mean(np.array(weight_list), axis=0)
-                    model = keras_model(num_eval, False)
-                    model.set_weights(weights)
-
-                if averaging_at_inference_time:
-
-                    weights_trained = model.get_weights()
-                    model = keras_model(num_eval, True)
-                    model.set_weights(weights_trained)
-
-                    list_pred = []
-                    list_pred_train = []
-                    for _ in range(200):
-                        predictions_val = model.predict(x_val_inner)
-                        predictions_val = clip_values(predictions_val, dim_of_interest)
-
-                        predictions_train = model.predict(x_train_inner)
-                        predictions_train = clip_values(predictions_train, dim_of_interest)
-
-                        list_pred.append(predictions_val)
-                        list_pred_train.append(predictions_train)
-
-                    predictions_val = np.mean(np.array(list_pred), axis=0)
-                    predictions_train = np.mean(np.array(list_pred_train), axis=0)
+                if binned:
+                    model = GradientBoostingRegressor()
+                    model.fit(x_train_inner, y_train_inner[:, dim_of_interest])
+                    predictions_train = model.predict(x_train_inner)
+                    predictions_val = model.predict(x_val_inner)
 
                 else:
-                    predictions_val = model.predict(x_val_inner)
-                    predictions_val = clip_values(predictions_val, dim_of_interest)
-
-                    predictions_train = model.predict(x_train_inner)
-                    predictions_train = clip_values(predictions_train, dim_of_interest)
+                    predictions_train, predictions_val = cnn_training_schemes(x_train_inner, x_val_inner, y_train_inner, y_val_inner, dim_of_interest,
+                                                                              num_eval, stochastic_averaging, averaging_at_inference_time)
 
                 train_error = compute_error(y_train_inner[:, dim_of_interest], predictions_train)
                 error = compute_error(y_val_inner[:, dim_of_interest], predictions_val)
@@ -157,8 +119,6 @@ if __name__ == "__main__":
                     print("the number of eval is:" + str(num_eval))
                     break
 
-                keras.backend.clear_session()
-
     else:
 
         test_pred = [[] for _ in range(2)]
@@ -166,7 +126,7 @@ if __name__ == "__main__":
         num_eval = 0
         for dim_of_interest in [0, 2]:
             r2_list = []
-            y_bins = np.digitize(train_y[:, dim_of_interest], np.linspace(np.min(train_y[:, dim_of_interest]), np.max(train_y[:, dim_of_interest]), 4))
+            y_bins = np.digitize(train_y[:, dim_of_interest], np.linspace(np.min(train_y[:, dim_of_interest]), np.max(train_y[:, dim_of_interest]), 3))
 
             kf_outer = StratifiedKFold(n_splits=10, shuffle=True, random_state=0)
             for train_outer, val_outer in kf_outer.split(train_x, y_bins):
@@ -223,6 +183,8 @@ if __name__ == "__main__":
             test_pred[index] = test_pred[index][best_model_index]
 
             index += 1
+
+    pickle.dump(test_pred, open("results.p", "wb"))
 
 
 

@@ -48,6 +48,25 @@ def standardize_grid(train_data, val_data, patch_wise=True):
     return train_data, val_data
 
 
+def get_data_wave(data_x, num_sampled_points=200):
+    length_multi_instance = num_sampled_points
+
+    diff_data = np.zeros((len(data_x), length_multi_instance-1))
+
+    for index in range(len(data_x)):
+
+        if index % 10 == 0:
+            print("COMPUTED FOR INDEX NUMBER: " + str(index))
+
+        pred_before, pred_after, range_pred = get_one_dim_diff(data_x[index][0], data_x[index][1], num_sampled_points)
+        feature = pred_before - pred_after
+        feature = [feature[index] - feature[index+1] for index in range(len(feature)-1)]
+
+        diff_data[index, :] = feature
+
+    return diff_data
+
+
 def make_grid(data_before, data_after, range_x, range_y, inverse=False):
     num_points_before = data_before.shape[0]
     num_points_after = data_after.shape[0]
@@ -71,6 +90,31 @@ def make_grid(data_before, data_after, range_x, range_y, inverse=False):
         matrix_count = np.transpose(matrix_count)
 
     return matrix_count
+
+
+def get_data_grid(data_x):
+
+    range_x = np.arange(0, 6000, 1000)
+    range_y = np.arange(0.92, 1.01, 0.01)
+    data_list = []
+
+    for index in range(len(data_x)):
+
+        grid = make_grid(data_x[index][0], data_x[index][1], range_x, range_y)
+        data_list.append(grid)
+
+    return np.array(data_list)
+
+
+def reshape_grid(grid):
+    new_grid_array = np.zeros((grid.shape[0], 4, 5, 2))
+
+    for index in range(grid.shape[0]):
+        for depth in range(2):
+            data = grid[index][depth * int(grid.shape[1] / 2):(depth + 1) * int(grid.shape[1] / 2)]
+            new_grid_array[index][:, :, depth] = data
+
+    return new_grid_array
 
 
 def get_cut_lightcurve(lightcurve_before, lightcurve_after):
